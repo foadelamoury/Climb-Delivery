@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace TarodevController
 {
@@ -14,6 +15,8 @@ namespace TarodevController
     public class PlayerController : MonoBehaviour, IPlayerController
     {
         [SerializeField] private ScriptableStats _stats;
+        [SerializeField] private InputActionAsset _inputActions;
+        
         public bool IsDashing => _isDashing;
         public bool IsClimbing => _isClimbing;
         public bool OnWall => _onWall;
@@ -21,6 +24,9 @@ namespace TarodevController
         public bool OnLeftWall => _onLeftWall;
         public bool Grounded => _grounded;
         public Vector2 FrameVelocity => _frameVelocity;
+        
+        // Expose JumpHeld for BetterJumping
+        public bool JumpHeld => _frameInput.JumpHeld;
 
         private Rigidbody2D _rb;
         private CapsuleCollider2D _col;
@@ -41,6 +47,15 @@ namespace TarodevController
         private float _currentStamina;
         private SpriteRenderer _renderer;
 
+        // New Input System actions
+        private InputAction _moveAction;
+        private InputAction _jumpAction;
+        private InputAction _dashAction;
+        private InputAction _climbAction;
+        
+        // Track jump pressed this frame
+        private bool _jumpPressedThisFrame;
+
         #region Interface
 
         public Vector2 FrameInput => _frameInput.Move;
@@ -59,6 +74,56 @@ namespace TarodevController
 
             _cachedQueryStartInColliders = Physics2D.queriesStartInColliders;
             _currentStamina = _stats.MaxStamina;
+            
+            // Setup Input Actions
+            SetupInputActions();
+        }
+
+        private void SetupInputActions()
+        {
+            if (_inputActions == null)
+            {
+                Debug.LogError("PlayerController: InputActionAsset is not assigned! Please assign the PlayerInputActions asset in the Inspector.", this);
+                return;
+            }
+            
+            var playerMap = _inputActions.FindActionMap("Player", true);
+            _moveAction = playerMap.FindAction("Move", true);
+            _jumpAction = playerMap.FindAction("Jump", true);
+            _dashAction = playerMap.FindAction("Dash", true);
+            _climbAction = playerMap.FindAction("Climb", true);
+        }
+
+        private void OnEnable()
+        {
+            if (_inputActions != null)
+            {
+                _inputActions.FindActionMap("Player")?.Enable();
+            }
+            
+            // Subscribe to jump performed event for reliable press detection
+            if (_jumpAction != null)
+            {
+                _jumpAction.performed += OnJumpPerformed;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (_jumpAction != null)
+            {
+                _jumpAction.performed -= OnJumpPerformed;
+            }
+            
+            if (_inputActions != null)
+            {
+                _inputActions.FindActionMap("Player")?.Disable();
+            }
+        }
+
+        private void OnJumpPerformed(InputAction.CallbackContext ctx)
+        {
+            _jumpPressedThisFrame = true;
         }
 
         private void Update()
@@ -69,14 +134,21 @@ namespace TarodevController
 
         private void GatherInput()
         {
+            if (_moveAction == null) return;
+            
+            Vector2 moveInput = _moveAction.ReadValue<Vector2>();
+            
             _frameInput = new FrameInput
             {
-                JumpDown = Input.GetButtonDown("Jump") || Input.GetKeyDown(KeyCode.C),
-                JumpHeld = Input.GetButton("Jump") || Input.GetKey(KeyCode.C),
-                DashDown = Input.GetButtonDown("Fire1") || Input.GetKeyDown(KeyCode.X),
-                ClimbHeld = Input.GetButton("Fire3") || Input.GetKey(KeyCode.Z),
-                Move = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"))
+                JumpDown = _jumpPressedThisFrame,
+                JumpHeld = _jumpAction.IsPressed(),
+                DashDown = _dashAction.WasPressedThisFrame(),
+                ClimbHeld = _climbAction.IsPressed(),
+                Move = moveInput
             };
+            
+            // Consume the jump press flag
+            _jumpPressedThisFrame = false;
 
             if (_stats.SnapInput)
             {
@@ -263,6 +335,30 @@ namespace TarodevController
 
             if (_isClimbing)
             {
+                // --- Wall-Top Transition ---
+                // Check if the player has reached the top of the wall
+                // Cast from the top of the collider in the wall direction to see if the wall continues above
+                float wallDir = _onRightWall ? 1f : -1f;
+                Vector2 topOfPlayer = (Vector2)_col.bounds.center + new Vector2(0, _col.bounds.extents.y);
+                
+                // Check if there's still wall above the player's top
+                bool wallAbove = Physics2D.Raycast(topOfPlayer, new Vector2(wallDir, 0), _col.bounds.extents.x + _stats.GrounderDistance + 0.1f, ~_stats.PlayerLayer);
+                
+                // Check if there's open space at the top of the wall (diagonal upward toward the wall)
+                Vector2 aboveWallCheck = topOfPlayer + new Vector2(wallDir * (_col.bounds.extents.x + 0.2f), 0.3f);
+                bool openAboveWall = !Physics2D.OverlapPoint(aboveWallCheck, ~_stats.PlayerLayer);
+                
+                if (!wallAbove && openAboveWall && _frameInput.Move.y > 0)
+                {
+                    // Player has climbed past the top of the wall — vault onto it
+                    _isClimbing = false;
+                    
+                    // Give upward + horizontal boost to pop the player onto the wall top
+                    _frameVelocity.y = _stats.ClimbSpeed * 1.5f;
+                    _frameVelocity.x = wallDir * _stats.MaxSpeed * 0.5f;
+                    return;
+                }
+                
                 // Vertical climb
                 float climbInput = _frameInput.Move.y;
                 float speedModifier = climbInput > 0 ? 0.7f : 1.2f; // Slower up, faster down
@@ -319,6 +415,24 @@ namespace TarodevController
         private void OnValidate()
         {
             if (_stats == null) Debug.LogWarning("Please assign a ScriptableStats asset to the Player Controller's Stats slot", this);
+            if (_inputActions == null) Debug.LogWarning("Please assign a PlayerInputActions asset to the Player Controller's Input Actions slot", this);
+        }
+        
+        private void OnDrawGizmosSelected()
+        {
+            // Visualize wall-top detection in editor
+            if (_col == null) return;
+            
+            Gizmos.color = Color.cyan;
+            Vector2 topOfPlayer = (Vector2)_col.bounds.center + new Vector2(0, _col.bounds.extents.y);
+            
+            // Right wall check
+            Gizmos.DrawLine(topOfPlayer, topOfPlayer + new Vector2(_col.bounds.extents.x + 0.3f, 0));
+            Gizmos.DrawWireSphere(topOfPlayer + new Vector2(_col.bounds.extents.x + 0.2f, 0.3f), 0.05f);
+            
+            // Left wall check
+            Gizmos.DrawLine(topOfPlayer, topOfPlayer + new Vector2(-_col.bounds.extents.x - 0.3f, 0));
+            Gizmos.DrawWireSphere(topOfPlayer + new Vector2(-_col.bounds.extents.x - 0.2f, 0.3f), 0.05f);
         }
 #endif
     }

@@ -2,6 +2,7 @@
   <Project Path="Unity.Timeline.csproj" />
   <Project Path="Unity.PlasticSCM.Editor.csproj" />
   <Project Path="UnityEngine.Advertisements.Editor.csproj" />
+  <Project Path="Unity.InputSystem.csproj" />
   <Project Path="Unity.Services.Core.Internal.csproj" />
   <Project Path="Unity.Timeline.Editor.csproj" />
   <Project Path="Unity.Multiplayer.Center.Editor.csproj" />
@@ -48,6 +49,7 @@
   <Project Path="Unity.Multiplayer.Center.Common.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Unity.Services.Core.Environments.Internal.csproj" />
+  <Project Path="Unity.InputSystem.ForUI.csproj" />
   <Project Path="Unity.Services.Core.Networking.csproj" />
   <Project Path="Unity.Services.Core.Scheduler.csproj" />
   <Project Path="UnityEngine.Purchasing.SecurityCore.csproj" />
@@ -56,6 +58,7 @@
   <Project Path="UnityEngine.Purchasing.WinRTCore.csproj" />
   <Project Path="Purchasing.Common.csproj" />
   <Project Path="Unity.Services.Core.Threading.csproj" />
+  <Project Path="Unity.InputSystem.TestFramework.csproj" />
   <Project Path="Unity.CollabProxy.Editor.csproj" />
   <Project Path="Unity.Services.Core.Device.csproj" />
   <Project Path="UnityEngine.Purchasing.AppleCore.csproj" />
