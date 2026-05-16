@@ -2140,7 +2140,7 @@ GameObject:
   - component: {fileID: 172095588}
   - component: {fileID: 172095590}
   - component: {fileID: 172095589}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Tilemap
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10044,7 +10044,7 @@ GameObject:
   m_Component:
   - component: {fileID: 443073846}
   - component: {fileID: 443073845}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Grid_Front
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -29805,7 +29805,7 @@ GameObject:
   m_Component:
   - component: {fileID: 815702834}
   - component: {fileID: 815702833}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: GridBack
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -29850,7 +29850,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1059521545}
   - component: {fileID: 1059521544}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Grid
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -29896,7 +29896,7 @@ GameObject:
   - component: {fileID: 1112247868}
   - component: {fileID: 1112247870}
   - component: {fileID: 1112247869}
-  m_Layer: 0
+  m_Layer: 8
   m_Name: Tilemap
   m_TagString: Untagged
   m_Icon: {fileID: 0}

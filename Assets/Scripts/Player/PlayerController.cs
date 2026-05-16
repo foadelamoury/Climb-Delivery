@@ -4,18 +4,10 @@ using UnityEngine.InputSystem;
 
 namespace TarodevController
 {
-    /// <summary>
-    /// Hey!
-    /// Tarodev here. I built this controller as there was a severe lack of quality & free 2D controllers out there.
-    /// I have a premium version on Patreon, which has every feature you'd expect from a polished controller. Link: https://www.patreon.com/tarodev
-    /// You can play and compete for best times here: https://tarodev.itch.io/extended-ultimate-2d-controller
-    /// If you hve any questions or would like to brag about your score, come to discord: https://discord.gg/tarodev
-    /// </summary>
     [RequireComponent(typeof(Rigidbody2D), typeof(Collider2D))]
     public class PlayerController : MonoBehaviour, IPlayerController
     {
         [SerializeField] private ScriptableStats _stats;
-        [SerializeField] private InputActionAsset _inputActions;
         
         public bool IsDashing => _isDashing;
         public bool IsClimbing => _isClimbing;
@@ -24,8 +16,6 @@ namespace TarodevController
         public bool OnLeftWall => _onLeftWall;
         public bool Grounded => _grounded;
         public Vector2 FrameVelocity => _frameVelocity;
-        
-        // Expose JumpHeld for BetterJumping
         public bool JumpHeld => _frameInput.JumpHeld;
 
         private Rigidbody2D _rb;
@@ -34,7 +24,6 @@ namespace TarodevController
         private Vector2 _frameVelocity;
         private bool _cachedQueryStartInColliders;
         
-        // Celeste Variables
         private bool _isDashing;
         private bool _canDash = true;
         private float _dashTimeLeft;
@@ -47,13 +36,13 @@ namespace TarodevController
         private float _currentStamina;
         private SpriteRenderer _renderer;
 
-        // New Input System actions
+        // Input actions created entirely in code — no files needed
+        private InputActionMap _actionMap;
         private InputAction _moveAction;
         private InputAction _jumpAction;
         private InputAction _dashAction;
         private InputAction _climbAction;
         
-        // Track jump pressed this frame
         private bool _jumpPressedThisFrame;
 
         #region Interface
@@ -71,54 +60,70 @@ namespace TarodevController
             _rb = GetComponent<Rigidbody2D>();
             _col = GetComponent<CapsuleCollider2D>();
             _renderer = GetComponentInChildren<SpriteRenderer>();
-
             _cachedQueryStartInColliders = Physics2D.queriesStartInColliders;
             _currentStamina = _stats.MaxStamina;
             
-            // Setup Input Actions
-            SetupInputActions();
+            CreateInputActions();
         }
 
-        private void SetupInputActions()
+        /// <summary>
+        /// Builds all input actions in pure code. No .inputactions file needed.
+        /// </summary>
+        private void CreateInputActions()
         {
-            if (_inputActions == null)
-            {
-                Debug.LogError("PlayerController: InputActionAsset is not assigned! Please assign the PlayerInputActions asset in the Inspector.", this);
-                return;
-            }
+            _actionMap = new InputActionMap("Player");
+
+            // Move — Vector2 composite from WASD, Arrows, and Gamepad stick
+            _moveAction = _actionMap.AddAction("Move", InputActionType.Value);
             
-            var playerMap = _inputActions.FindActionMap("Player", true);
-            _moveAction = playerMap.FindAction("Move", true);
-            _jumpAction = playerMap.FindAction("Jump", true);
-            _dashAction = playerMap.FindAction("Dash", true);
-            _climbAction = playerMap.FindAction("Climb", true);
+            // WASD composite
+            _moveAction.AddCompositeBinding("2DVector")
+                .With("Up", "<Keyboard>/w")
+                .With("Down", "<Keyboard>/s")
+                .With("Left", "<Keyboard>/a")
+                .With("Right", "<Keyboard>/d");
+
+            // Arrow keys composite
+            _moveAction.AddCompositeBinding("2DVector")
+                .With("Up", "<Keyboard>/upArrow")
+                .With("Down", "<Keyboard>/downArrow")
+                .With("Left", "<Keyboard>/leftArrow")
+                .With("Right", "<Keyboard>/rightArrow");
+
+            // Gamepad left stick
+            _moveAction.AddBinding("<Gamepad>/leftStick");
+
+            // Jump — Space, C, Gamepad South
+            _jumpAction = _actionMap.AddAction("Jump", InputActionType.Button);
+            _jumpAction.AddBinding("<Keyboard>/space");
+            _jumpAction.AddBinding("<Keyboard>/c");
+            _jumpAction.AddBinding("<Gamepad>/buttonSouth");
+
+            // Dash — X, Left Mouse, Gamepad East (SEPARATE from Climb)
+            _dashAction = _actionMap.AddAction("Dash", InputActionType.Button);
+            _dashAction.AddBinding("<Keyboard>/x");
+            _dashAction.AddBinding("<Mouse>/leftButton");
+            _dashAction.AddBinding("<Gamepad>/buttonEast");
+
+            // Climb — Left Shift, Z, Gamepad West (SEPARATE from Dash)
+            _climbAction = _actionMap.AddAction("Climb", InputActionType.Button);
+            _climbAction.AddBinding("<Keyboard>/leftShift");
+            _climbAction.AddBinding("<Keyboard>/z");
+            _climbAction.AddBinding("<Gamepad>/buttonWest");
         }
 
         private void OnEnable()
         {
-            if (_inputActions != null)
-            {
-                _inputActions.FindActionMap("Player")?.Enable();
-            }
+            _actionMap.Enable();
+            _jumpAction.performed += OnJumpPerformed;
             
-            // Subscribe to jump performed event for reliable press detection
-            if (_jumpAction != null)
-            {
-                _jumpAction.performed += OnJumpPerformed;
-            }
+            Debug.Log("[PlayerController] Input actions ENABLED. Press WASD/Arrows to move, Space to jump, X to dash, Shift to climb.");
         }
 
         private void OnDisable()
         {
-            if (_jumpAction != null)
-            {
-                _jumpAction.performed -= OnJumpPerformed;
-            }
-            
-            if (_inputActions != null)
-            {
-                _inputActions.FindActionMap("Player")?.Disable();
-            }
+            _jumpAction.performed -= OnJumpPerformed;
+            _actionMap.Disable();
         }
 
         private void OnJumpPerformed(InputAction.CallbackContext ctx)
@@ -134,9 +139,20 @@ namespace TarodevController
 
         private void GatherInput()
         {
-            if (_moveAction == null) return;
-            
             Vector2 moveInput = _moveAction.ReadValue<Vector2>();
+            
+            // DEBUG: Log every second to check state
+            if (Time.frameCount % 60 == 0)
+            {
+                bool oldInputWorks = Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.Space);
+                Debug.Log($"[INPUT DEBUG] Frame={Time.frameCount} " +
+                    $"ActionMap.enabled={_actionMap.enabled} " +
+                    $"MoveAction.enabled={_moveAction.enabled} " +
+                    $"MoveValue={moveInput} " +
+                    $"OldInputWorks={oldInputWorks} " +
+                    $"Keyboard.current={UnityEngine.InputSystem.Keyboard.current} " +
+                    $"AnyKey={UnityEngine.InputSystem.Keyboard.current?.anyKey.isPressed}");
+            }
             
             _frameInput = new FrameInput
             {
@@ -147,7 +163,6 @@ namespace TarodevController
                 Move = moveInput
             };
             
-            // Consume the jump press flag
             _jumpPressedThisFrame = false;
 
             if (_stats.SnapInput)
@@ -197,19 +212,15 @@ namespace TarodevController
         {
             Physics2D.queriesStartInColliders = false;
 
-            // Ground and Ceiling
             bool groundHit = Physics2D.CapsuleCast(_col.bounds.center, _col.size, _col.direction, 0, Vector2.down, _stats.GrounderDistance, ~_stats.PlayerLayer);
             bool ceilingHit = Physics2D.CapsuleCast(_col.bounds.center, _col.size, _col.direction, 0, Vector2.up, _stats.GrounderDistance, ~_stats.PlayerLayer);
 
-            // Wall Detection
             _onLeftWall = Physics2D.CapsuleCast(_col.bounds.center, _col.size, _col.direction, 0, Vector2.left, _stats.GrounderDistance, ~_stats.PlayerLayer);
             _onRightWall = Physics2D.CapsuleCast(_col.bounds.center, _col.size, _col.direction, 0, Vector2.right, _stats.GrounderDistance, ~_stats.PlayerLayer);
             _onWall = _onLeftWall || _onRightWall;
 
-            // Hit a Ceiling
             if (ceilingHit) _frameVelocity.y = Mathf.Min(0, _frameVelocity.y);
 
-            // Landed on the Ground
             if (!_grounded && groundHit)
             {
                 _grounded = true;
@@ -221,7 +232,6 @@ namespace TarodevController
                 if (_renderer != null) _renderer.color = Color.white;
                 GroundedChanged?.Invoke(true, Mathf.Abs(_frameVelocity.y));
             }
-            // Left the Ground
             else if (_grounded && !groundHit)
             {
                 _grounded = false;
@@ -233,7 +243,6 @@ namespace TarodevController
         }
 
         #endregion
-
 
         #region Jumping
 
@@ -307,7 +316,6 @@ namespace TarodevController
                 _canDash = false;
                 _dashTimeLeft = _stats.DashDuration;
                 
-                // Dash in movement direction or forward if no movement
                 _dashDir = _frameInput.Move.normalized;
                 if (_dashDir == Vector2.zero) _dashDir = new Vector2(transform.localScale.x, 0).normalized;
                 
@@ -320,7 +328,7 @@ namespace TarodevController
                 if (_dashTimeLeft <= 0)
                 {
                     _isDashing = false;
-                    _frameVelocity = Vector2.zero; // Stop after dash
+                    _frameVelocity = Vector2.zero;
                 }
             }
         }
@@ -335,37 +343,27 @@ namespace TarodevController
 
             if (_isClimbing)
             {
-                // --- Wall-Top Transition ---
-                // Check if the player has reached the top of the wall
-                // Cast from the top of the collider in the wall direction to see if the wall continues above
                 float wallDir = _onRightWall ? 1f : -1f;
                 Vector2 topOfPlayer = (Vector2)_col.bounds.center + new Vector2(0, _col.bounds.extents.y);
                 
-                // Check if there's still wall above the player's top
                 bool wallAbove = Physics2D.Raycast(topOfPlayer, new Vector2(wallDir, 0), _col.bounds.extents.x + _stats.GrounderDistance + 0.1f, ~_stats.PlayerLayer);
                 
-                // Check if there's open space at the top of the wall (diagonal upward toward the wall)
                 Vector2 aboveWallCheck = topOfPlayer + new Vector2(wallDir * (_col.bounds.extents.x + 0.2f), 0.3f);
                 bool openAboveWall = !Physics2D.OverlapPoint(aboveWallCheck, ~_stats.PlayerLayer);
                 
                 if (!wallAbove && openAboveWall && _frameInput.Move.y > 0)
                 {
-                    // Player has climbed past the top of the wall — vault onto it
                     _isClimbing = false;
-                    
-                    // Give upward + horizontal boost to pop the player onto the wall top
                     _frameVelocity.y = _stats.ClimbSpeed * 1.5f;
                     _frameVelocity.x = wallDir * _stats.MaxSpeed * 0.5f;
                     return;
                 }
                 
-                // Vertical climb
                 float climbInput = _frameInput.Move.y;
-                float speedModifier = climbInput > 0 ? 0.7f : 1.2f; // Slower up, faster down
+                float speedModifier = climbInput > 0 ? 0.7f : 1.2f;
                 _frameVelocity.y = climbInput * _stats.ClimbSpeed * speedModifier;
                 _frameVelocity.x = 0;
 
-                // Stamina consumption
                 float consumptionRate = climbInput > 0 ? 5 : 2;
                 _currentStamina -= consumptionRate * Time.fixedDeltaTime;
 
@@ -374,7 +372,6 @@ namespace TarodevController
                     _isClimbing = false;
                 }
 
-                // Visual feedback
                 if (_renderer != null)
                 {
                     if (_currentStamina < _stats.MaxStamina * 0.25f)
@@ -415,24 +412,6 @@ namespace TarodevController
         private void OnValidate()
         {
             if (_stats == null) Debug.LogWarning("Please assign a ScriptableStats asset to the Player Controller's Stats slot", this);
-            if (_inputActions == null) Debug.LogWarning("Please assign a PlayerInputActions asset to the Player Controller's Input Actions slot", this);
-        }
-        
-        private void OnDrawGizmosSelected()
-        {
-            // Visualize wall-top detection in editor
-            if (_col == null) return;
-            
-            Gizmos.color = Color.cyan;
-            Vector2 topOfPlayer = (Vector2)_col.bounds.center + new Vector2(0, _col.bounds.extents.y);
-            
-            // Right wall check
-            Gizmos.DrawLine(topOfPlayer, topOfPlayer + new Vector2(_col.bounds.extents.x + 0.3f, 0));
-            Gizmos.DrawWireSphere(topOfPlayer + new Vector2(_col.bounds.extents.x + 0.2f, 0.3f), 0.05f);
-            
-            // Left wall check
-            Gizmos.DrawLine(topOfPlayer, topOfPlayer + new Vector2(-_col.bounds.extents.x - 0.3f, 0));
-            Gizmos.DrawWireSphere(topOfPlayer + new Vector2(-_col.bounds.extents.x - 0.2f, 0.3f), 0.05f);
         }
 #endif
     }
@@ -449,7 +428,6 @@ namespace TarodevController
     public interface IPlayerController
     {
         public event Action<bool, float> GroundedChanged;
-
         public event Action Jumped;
         public Vector2 FrameInput { get; }
     }
